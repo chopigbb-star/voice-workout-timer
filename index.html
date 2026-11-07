@@ -56,6 +56,11 @@
   .warn{background:#3a2a12;color:#ffd9a0;border-radius:14px;padding:10px 12px;font-size:14px;line-height:1.45;display:none}
   .warn.show{display:block}
 
+  .presets{display:flex;flex-wrap:wrap;gap:8px}
+  .preset{background:var(--card);border-radius:14px;padding:0 14px;height:48px;font-size:15px;font-weight:600;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;line-height:1.15}
+  .preset small{font-size:11px;font-weight:500;color:var(--muted)}
+  .preset[aria-pressed="true"]{background:var(--accent);color:#14080a}
+  .preset[aria-pressed="true"] small{color:#3b1a14}
   .settings{background:var(--card);border-radius:20px;padding:6px 14px}
   .row{display:flex;align-items:center;justify-content:space-between;padding:8px 0}
   .row + .row{border-top:1px solid var(--card2)}
@@ -111,6 +116,8 @@
     </div>
   </section>
 
+  <section class="presets" id="presets" aria-label="프리셋"></section>
+
   <section class="settings" aria-label="설정">
     <div class="row"><label for="v-work">운동</label>
       <div class="step"><button type="button" data-k="work" data-d="-5" aria-label="운동 5초 줄이기">−</button><output id="v-work"></output><button type="button" data-k="work" data-d="5" aria-label="운동 5초 늘리기">+</button></div></div>
@@ -129,6 +136,13 @@
 <script>
 // <logic>
 const LIMITS = { work:[5,600], rest:[0,300], rounds:[1,50] };
+const PRESETS = [
+  { id:'plank',   name:'플랭크',   work:60,  rest:30, rounds:3, words:['플랭크','플랭','plank'] },
+  { id:'tabata',  name:'타바타',   work:20,  rest:10, rounds:8, words:['타바타','타바다','tabata'] },
+  { id:'circuit', name:'서킷',     work:40,  rest:20, rounds:6, words:['서킷','써킷'] },
+  { id:'stretch', name:'스트레칭', work:30,  rest:5,  rounds:6, words:['스트레칭'] },
+  { id:'boxing',  name:'복싱',     work:180, rest:60, rounds:3, words:['복싱','권투'] },
+];
 const clamp = (v,[a,b]) => Math.max(a, Math.min(b, v));
 
 // 한자어 숫자(삼십오 → 35)
@@ -167,6 +181,15 @@ function parseCommand(raw, final){
   // 시간 추가
   m = t.match(new RegExp(NUM + '(초|분)(?:더|추가|연장)'));
   if (m){ if (!final) return {wait:true}; const s = secOf(m[1], m[2]); if (s != null) return {type:'add', value:s}; }
+
+  // 프리셋 ("플랭크", "타바타 시작")
+  for (const p of PRESETS){
+    if (p.words.some(w => t.includes(w))){
+      const go = /(시작|스타트|출발|start)/.test(t);
+      if (!final && !go) return {wait:true};
+      return {type:'preset', id:p.id, go};
+    }
+  }
 
   if (/(소리꺼|음소거|조용)/.test(t)) return {type:'sound', on:false};
   if (/(소리켜|소리키|음소거해제)/.test(t)) return {type:'sound', on:true};
@@ -263,6 +286,7 @@ function render(){
   $('v-rounds').textContent = cfg.rounds + '세트';
   $('soundLabel').textContent = cfg.sound ? '소리 켬' : '소리 끔';
   $('soundBtn').setAttribute('aria-pressed', String(cfg.sound));
+  renderPresets();
 }
 function fmtSet(s){ return s >= 60 ? Math.floor(s/60) + '분' + (s%60 ? ' ' + (s%60) + '초' : '') : s + '초'; }
 
@@ -354,6 +378,32 @@ document.querySelectorAll('.step button').forEach(b => b.addEventListener('click
   applySetting(b.dataset.k, cfg[b.dataset.k] + Number(b.dataset.d));
 }));
 
+/* ───────── 프리셋 ───────── */
+function presetSub(p){ return `${fmtSet(p.work)} / ${fmtSet(p.rest)} × ${p.rounds}`; }
+function renderPresets(){
+  const box = $('presets');
+  if (!box.children.length){
+    PRESETS.forEach(p => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'preset'; b.dataset.id = p.id;
+      b.innerHTML = `<span>${p.name}</span><small>${presetSub(p)}</small>`;
+      b.addEventListener('click', () => applyPreset(p.id, false));
+      box.appendChild(b);
+    });
+  }
+  box.querySelectorAll('.preset').forEach(b => {
+    const p = PRESETS.find(x => x.id === b.dataset.id);
+    b.setAttribute('aria-pressed', String(p.work === cfg.work && p.rest === cfg.rest && p.rounds === cfg.rounds));
+  });
+}
+function applyPreset(id, go){
+  const p = PRESETS.find(x => x.id === id); if (!p) return;
+  ensureAudio();
+  cfg.work = p.work; cfg.rest = p.rest; cfg.rounds = p.rounds; saveCfg();
+  resetTimer();
+  if (go) startTimer(); else speak(`${p.name} 설정했어요`);
+}
+
 /* ───────── 버튼 ───────── */
 $('mainBtn').addEventListener('click', () => { ensureAudio(); running ? pauseTimer() : startTimer(); });
 $('resetBtn').addEventListener('click', resetTimer);
@@ -376,7 +426,7 @@ function setMicUI(state){
 function showHeard(text, ok){
   const h = $('heard'); h.textContent = text ? `“${text}”${ok ? ' ✓ ' + ok : ''}` : ''; h.classList.toggle('ok', !!ok);
 }
-const CMD_NAME = { start:'시작', pause:'일시정지', skip:'다음', reset:'리셋', ask:'남은 시간', sound:'소리', micoff:'음성 끄기', add:'시간 추가', set:'설정 변경' };
+const CMD_NAME = { start:'시작', pause:'일시정지', skip:'다음', reset:'리셋', ask:'남은 시간', sound:'소리', micoff:'음성 끄기', add:'시간 추가', set:'설정 변경', preset:'프리셋' };
 
 function runCommand(c){
   ensureAudio();
@@ -396,6 +446,7 @@ function runCommand(c){
       speak(s >= 60 ? `${Math.floor(s/60)}분 ${s%60}초 남았어요` : `${s}초 남았어요`);
       break;
     }
+    case 'preset': applyPreset(c.id, c.go); break;
     case 'micoff': stopMic(); break;
     case 'set': {
       applySetting(c.key, c.value);
@@ -458,7 +509,7 @@ function openRec(){
 $('micBtn').addEventListener('click', () => micOn ? stopMic() : startMic());
 
 /* ───────── 명령 안내 칩 ───────── */
-['시작','정지','계속','다음','처음부터','운동 40초','휴식 20초','8세트','30초 더','남은 시간','소리 꺼'].forEach(s => {
+['시작','정지','계속','다음','처음부터','플랭크','타바타 시작','운동 40초','휴식 20초','8세트','30초 더','남은 시간','소리 꺼'].forEach(s => {
   const el = document.createElement('span'); el.className = 'chip'; el.textContent = s; $('chips').appendChild(el);
 });
 
