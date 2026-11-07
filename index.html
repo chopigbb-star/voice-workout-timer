@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>음성 운동 타이머</title>
+<style>
+  :root{
+    --bg:#0e1116; --card:#171c24; --card2:#1f2631; --text:#f2f5f9; --muted:#8c97a8;
+    --prep:#ffd166; --work:#ff6b4a; --rest:#3ddc97; --done:#7aa2ff; --accent:#ff6b4a;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;}
+  body{min-height:100vh;min-height:100dvh;display:flex;justify-content:center;
+    padding:max(14px,env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) max(18px,env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left));}
+  main{width:100%;max-width:460px;display:flex;flex-direction:column;gap:14px}
+  button{font:inherit;color:inherit;border:0;cursor:pointer;touch-action:manipulation}
+  button:focus-visible{outline:3px solid #fff;outline-offset:2px}
+
+  header{display:flex;justify-content:space-between;align-items:center}
+  h1{font-size:18px;margin:0;font-weight:700;letter-spacing:-.2px}
+  .icon-btn{background:var(--card);border-radius:12px;padding:0 12px;height:40px;display:flex;align-items:center;gap:6px;font-size:14px;color:var(--muted)}
+  .icon-btn[aria-pressed="true"]{color:var(--text)}
+
+  .stage{background:var(--card);border-radius:28px;padding:18px 14px 20px;display:flex;flex-direction:column;align-items:center;gap:6px;
+    transition:box-shadow .3s}
+  .stage[data-phase="work"]{box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--work) 55%,transparent)}
+  .stage[data-phase="rest"]{box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--rest) 55%,transparent)}
+  .phase{font-size:20px;font-weight:700;letter-spacing:.5px;height:28px}
+  .ringwrap{position:relative;width:min(78vw,300px);aspect-ratio:1}
+  svg.ring{width:100%;height:100%;transform:rotate(-90deg)}
+  .track{stroke:var(--card2)}
+  .bar{stroke:var(--prep);transition:stroke .25s;stroke-linecap:round}
+  .center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .time{font-size:clamp(64px,22vw,92px);font-weight:700;font-variant-numeric:tabular-nums;line-height:1;letter-spacing:-2px}
+  .sets{margin-top:8px;color:var(--muted);font-size:16px}
+
+  .controls{display:grid;grid-template-columns:1fr 2fr 1fr;gap:10px;width:100%;margin-top:10px}
+  .btn{height:60px;border-radius:18px;background:var(--card2);font-size:16px;font-weight:600}
+  .btn.main{background:var(--accent);color:#14080a;font-size:22px;font-weight:800;transition:background .25s}
+  .btn:active{transform:scale(.97)}
+
+  .mic{display:flex;align-items:center;gap:12px;background:var(--card);border-radius:20px;padding:12px 14px}
+  .micbtn{flex:none;width:56px;height:56px;border-radius:50%;background:var(--card2);display:grid;place-items:center;position:relative}
+  .micbtn svg{width:26px;height:26px;fill:var(--muted)}
+  .micbtn[aria-pressed="true"]{background:#e5484d}
+  .micbtn[aria-pressed="true"] svg{fill:#fff}
+  .micbtn[aria-pressed="true"]::after{content:"";position:absolute;inset:-5px;border-radius:50%;border:2px solid #e5484d;opacity:.6;animation:pulse 1.6s ease-out infinite}
+  @keyframes pulse{from{transform:scale(.9);opacity:.7}to{transform:scale(1.25);opacity:0}}
+  @media (prefers-reduced-motion:reduce){.micbtn[aria-pressed="true"]::after{animation:none}}
+  .micinfo{min-width:0;flex:1}
+  .micstate{font-size:15px;font-weight:600}
+  .heard{font-size:14px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;min-height:20px}
+  .heard.ok{color:var(--rest)}
+  .warn{background:#3a2a12;color:#ffd9a0;border-radius:14px;padding:10px 12px;font-size:14px;line-height:1.45;display:none}
+  .warn.show{display:block}
+
+  .settings{background:var(--card);border-radius:20px;padding:6px 14px}
+  .row{display:flex;align-items:center;justify-content:space-between;padding:8px 0}
+  .row + .row{border-top:1px solid var(--card2)}
+  .row label{font-size:16px}
+  .step{display:flex;align-items:center;gap:6px}
+  .step button{width:44px;height:44px;border-radius:12px;background:var(--card2);font-size:22px;line-height:1}
+  .step output{min-width:76px;text-align:center;font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
+
+  .cmds{color:var(--muted);font-size:13px;line-height:1.7}
+  .cmds b{color:var(--text);font-weight:600}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .chip{background:var(--card);border-radius:999px;padding:5px 11px;font-size:13px;color:var(--text)}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>음성 운동 타이머</h1>
+    <button class="icon-btn" id="soundBtn" aria-pressed="true" type="button">
+      <span id="soundLabel">소리 켬</span>
+    </button>
+  </header>
+
+  <section class="stage" id="stage" data-phase="idle" aria-live="polite">
+    <div class="phase" id="phase">준비 완료</div>
+    <div class="ringwrap">
+      <svg class="ring" viewBox="0 0 220 220" aria-hidden="true">
+        <circle class="track" cx="110" cy="110" r="98" fill="none" stroke-width="14"/>
+        <circle class="bar" id="bar" cx="110" cy="110" r="98" fill="none" stroke-width="14"
+                stroke-dasharray="615.75" stroke-dashoffset="0"/>
+      </svg>
+      <div class="center">
+        <div class="time" id="time">0:40</div>
+        <div class="sets" id="sets">1 / 8 세트</div>
+      </div>
+    </div>
+    <div class="controls">
+      <button class="btn" id="resetBtn" type="button">리셋</button>
+      <button class="btn main" id="mainBtn" type="button">시작</button>
+      <button class="btn" id="skipBtn" type="button">다음</button>
+    </div>
+  </section>
+
+  <div class="warn" id="warn" role="status"></div>
+
+  <section class="mic">
+    <button class="micbtn" id="micBtn" aria-pressed="false" aria-label="음성 명령 켜기/끄기" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3.5 3.5 0 0 0 3.5-3.5v-6a3.5 3.5 0 0 0-7 0v6A3.5 3.5 0 0 0 12 15Zm6-3.5a1 1 0 1 0-2 0 4 4 0 0 1-8 0 1 1 0 1 0-2 0 6 6 0 0 0 5 5.91V20H9a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2h-2v-2.59A6 6 0 0 0 18 11.5Z"/></svg>
+    </button>
+    <div class="micinfo">
+      <div class="micstate" id="micState">음성 명령 꺼짐 — 마이크를 눌러 켜세요</div>
+      <div class="heard" id="heard"></div>
+    </div>
+  </section>
+
+  <section class="settings" aria-label="설정">
+    <div class="row"><label for="v-work">운동</label>
+      <div class="step"><button type="button" data-k="work" data-d="-5" aria-label="운동 5초 줄이기">−</button><output id="v-work"></output><button type="button" data-k="work" data-d="5" aria-label="운동 5초 늘리기">+</button></div></div>
+    <div class="row"><label for="v-rest">휴식</label>
+      <div class="step"><button type="button" data-k="rest" data-d="-5" aria-label="휴식 5초 줄이기">−</button><output id="v-rest"></output><button type="button" data-k="rest" data-d="5" aria-label="휴식 5초 늘리기">+</button></div></div>
+    <div class="row"><label for="v-rounds">세트</label>
+      <div class="step"><button type="button" data-k="rounds" data-d="-1" aria-label="세트 줄이기">−</button><output id="v-rounds"></output><button type="button" data-k="rounds" data-d="1" aria-label="세트 늘리기">+</button></div></div>
+  </section>
+
+  <section class="cmds">
+    <b>이렇게 말해 보세요</b>
+    <div class="chips" id="chips"></div>
+  </section>
+</main>
+
+<script>
+// <logic>
+const LIMITS = { work:[5,600], rest:[0,300], rounds:[1,50] };
+const clamp = (v,[a,b]) => Math.max(a, Math.min(b, v));
+
+// 한자어 숫자(삼십오 → 35)
+function koNum(s){
+  const d = {영:0,공:0,일:1,이:2,삼:3,사:4,오:5,육:6,칠:7,팔:8,구:9};
+  let total = 0, cur = null, seen = false;
+  for (const ch of s){
+    if (ch in d){ cur = d[ch]; seen = true; }
+    else if (ch === '십'){ total += (cur ?? 1) * 10; cur = null; seen = true; }
+    else if (ch === '백'){ total += (cur ?? 1) * 100; cur = null; seen = true; }
+    else return null;
+  }
+  if (!seen) return null;
+  return total + (cur ?? 0);
+}
+const NUM = '(\\d+|[영공일이삼사오육칠팔구십백]+)';
+function toNum(tok){ return /^\d+$/.test(tok) ? parseInt(tok,10) : koNum(tok); }
+function secOf(numTok, unit){ const n = toNum(numTok); if (n == null) return null; return unit === '분' ? n*60 : n; }
+
+// 인식된 문장 → 명령 객체. 숫자가 들어가는 명령은 확정(final)된 문장에서만 실행.
+function parseCommand(raw, final){
+  const t = raw.toLowerCase().replace(/[\s.,!?]/g,'');
+  if (!t) return null;
+  let m;
+
+  // 시간·세트 설정
+  m = t.match(new RegExp('(운동|휴식|쉬는)(?:시간)?(?:을|은|는|를)?' + NUM + '(초|분)'));
+  if (m){ if (!final) return {wait:true}; const s = secOf(m[2], m[3]); if (s != null) return {type:'set', key: m[1]==='운동'?'work':'rest', value:s}; }
+  m = t.match(new RegExp(NUM + '(초|분)(?:동안)?(운동|휴식)'));
+  if (m){ if (!final) return {wait:true}; const s = secOf(m[1], m[2]); if (s != null) return {type:'set', key: m[3]==='운동'?'work':'rest', value:s}; }
+  m = t.match(new RegExp('(?:세트|라운드)(?:를|는|은)?' + NUM + '(?!초|분)'));
+  if (m && !/세트(?:를|는|은)?\d+초/.test(t)){ if (!final) return {wait:true}; const n = toNum(m[1]); if (n != null) return {type:'set', key:'rounds', value:n}; }
+  m = t.match(new RegExp(NUM + '(세트|라운드|회)'));
+  if (m){ if (!final) return {wait:true}; const n = toNum(m[1]); if (n != null) return {type:'set', key:'rounds', value:n}; }
+
+  // 시간 추가
+  m = t.match(new RegExp(NUM + '(초|분)(?:더|추가|연장)'));
+  if (m){ if (!final) return {wait:true}; const s = secOf(m[1], m[2]); if (s != null) return {type:'add', value:s}; }
+
+  if (/(소리꺼|음소거|조용)/.test(t)) return {type:'sound', on:false};
+  if (/(소리켜|소리키|음소거해제)/.test(t)) return {type:'sound', on:true};
+  if (/(음성끄|마이크끄|음성명령끄)/.test(t)) return {type:'micoff'};
+  if (/(몇초|남은시간|얼마남)/.test(t)) return {type:'ask'};
+  if (/(리셋|초기화|처음부터|처음으로|reset)/.test(t)) return {type:'reset'};
+  if (/(일시정지|정지|멈춰|멈춤|멈추|스톱|잠깐|잠시|stop|pause)/.test(t)) return {type:'pause'};
+  if (/(다음|스킵|건너|넘겨|넘어가|skip|next)/.test(t)) return {type:'skip'};
+  if (/(시작|스타트|출발|계속|재개|가자|start|go)/.test(t)) return {type:'start'};
+  return null;
+}
+// </logic>
+
+/* ───────── 상태 ───────── */
+const $ = id => document.getElementById(id);
+const stage = $('stage'), barEl = $('bar');
+const C = 2 * Math.PI * 98;
+const PREP_MS = 5000;
+
+let cfg = { work:40, rest:20, rounds:8, sound:true };
+try { const s = JSON.parse(localStorage.getItem('voice-workout-timer') || 'null'); if (s) cfg = { ...cfg, ...s }; } catch(e){}
+function saveCfg(){ try { localStorage.setItem('voice-workout-timer', JSON.stringify(cfg)); } catch(e){} }
+
+let phase = 'idle';          // idle | prep | work | rest | done
+let running = false;
+let round = 1;
+let total = cfg.work * 1000;
+let remain = total;
+let endAt = 0;
+let lastSec = -1;
+
+const COLORS = { idle:'--prep', prep:'--prep', work:'--work', rest:'--rest', done:'--done' };
+const LABELS = { idle:'준비 완료', prep:'준비', work:'운동', rest:'휴식', done:'완료!' };
+
+/* ───────── 소리 ───────── */
+let actx = null;
+function ensureAudio(){
+  try {
+    if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === 'suspended') actx.resume();
+  } catch(e){}
+}
+function beep(freq = 880, dur = 0.12, vol = 0.25){
+  if (!cfg.sound || !actx) return;
+  try {
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = 'sine'; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, actx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime + dur);
+    o.connect(g); g.connect(actx.destination);
+    o.start(); o.stop(actx.currentTime + dur + 0.02);
+  } catch(e){}
+}
+let koVoice = null;
+function pickVoice(){
+  try { const vs = speechSynthesis.getVoices(); koVoice = vs.find(v => /^ko/i.test(v.lang)) || null; } catch(e){}
+}
+try { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; } catch(e){}
+
+let ignoreUntil = 0;   // 내 음성 안내를 명령으로 오인하지 않도록
+function speak(text){
+  if (!cfg.sound || !('speechSynthesis' in window)) return;
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'ko-KR'; if (koVoice) u.voice = koVoice; u.rate = 1.1;
+    ignoreUntil = Date.now() + 4000;
+    u.onend = u.onerror = () => { ignoreUntil = Date.now() + 600; };
+    speechSynthesis.speak(u);
+  } catch(e){}
+}
+
+/* ───────── 화면 ───────── */
+const fmt = ms => {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  return s >= 60 ? Math.floor(s/60) + ':' + String(s%60).padStart(2,'0') : String(s);
+};
+function render(){
+  stage.dataset.phase = phase;
+  const col = `var(${COLORS[phase]})`;
+  barEl.style.stroke = col;
+  $('phase').textContent = (phase === 'idle' && round > 1) ? '일시 중지' : LABELS[phase];
+  $('phase').style.color = col;
+  const showMs = phase === 'idle' ? cfg.work * 1000 : remain;
+  $('time').textContent = fmt(showMs);
+  const frac = phase === 'idle' ? 1 : (phase === 'done' ? 0 : (total ? remain / total : 0));
+  barEl.style.strokeDashoffset = String(C * (1 - frac));
+  $('sets').textContent = phase === 'done' ? `${cfg.rounds}세트 완료` : `${Math.min(round, cfg.rounds)} / ${cfg.rounds} 세트`;
+  const main = $('mainBtn');
+  main.textContent = running ? '일시정지' : (phase === 'idle' ? '시작' : (phase === 'done' ? '다시 시작' : '계속'));
+  main.style.background = col;
+  $('v-work').textContent = fmtSet(cfg.work);
+  $('v-rest').textContent = fmtSet(cfg.rest);
+  $('v-rounds').textContent = cfg.rounds + '세트';
+  $('soundLabel').textContent = cfg.sound ? '소리 켬' : '소리 끔';
+  $('soundBtn').setAttribute('aria-pressed', String(cfg.sound));
+}
+function fmtSet(s){ return s >= 60 ? Math.floor(s/60) + '분' + (s%60 ? ' ' + (s%60) + '초' : '') : s + '초'; }
+
+/* ───────── 타이머 로직 ───────── */
+function setPhase(p){
+  phase = p; lastSec = -1;
+  total = p === 'prep' ? PREP_MS : p === 'work' ? cfg.work*1000 : p === 'rest' ? cfg.rest*1000 : 0;
+  remain = total;
+  if (running) endAt = Date.now() + remain;
+  if (p === 'prep'){ speak('준비하세요'); beep(660, .15); }
+  if (p === 'work'){ speak(round === cfg.rounds && cfg.rounds > 1 ? '마지막 세트, 운동 시작' : `${round}세트, 운동 시작`); beep(1040, .35, .3); }
+  if (p === 'rest'){ speak('휴식'); beep(520, .35, .3); }
+  if (p === 'done'){ running = false; speak('수고하셨습니다. 운동 완료'); beep(1040,.2); setTimeout(()=>beep(1320,.4),220); }
+  render();
+}
+function advance(){
+  if (phase === 'prep') return setPhase('work');
+  if (phase === 'work'){
+    if (round >= cfg.rounds) return setPhase('done');
+    if (cfg.rest > 0) return setPhase('rest');
+    round++; return setPhase('work');
+  }
+  if (phase === 'rest'){ round++; return setPhase('work'); }
+}
+function startTimer(){
+  ensureAudio();
+  if (running) return;
+  if (phase === 'idle' || phase === 'done'){
+    round = 1; running = true; requestWake(); setPhase('prep');
+  } else {
+    running = true; endAt = Date.now() + remain; requestWake(); render();
+  }
+}
+function pauseTimer(){
+  if (!running) return;
+  remain = Math.max(0, endAt - Date.now());
+  running = false; render();
+}
+function resetTimer(){
+  running = false; phase = 'idle'; round = 1;
+  total = cfg.work*1000; remain = total; lastSec = -1;
+  try { speechSynthesis.cancel(); } catch(e){}
+  render();
+}
+function skipTimer(){
+  if (phase === 'idle' || phase === 'done') return;
+  ensureAudio();
+  advance();
+}
+function addTime(sec){
+  if (phase === 'idle' || phase === 'done') return;
+  const ms = sec * 1000;
+  total += ms;
+  if (running){ endAt += ms; remain = Math.max(0, endAt - Date.now()); } else { remain += ms; }
+  render();
+}
+function tick(){
+  if (!running) return;
+  remain = endAt - Date.now();
+  if (remain <= 0){ remain = 0; advance(); return; }
+  const s = Math.ceil(remain / 1000);
+  if (s !== lastSec){
+    lastSec = s;
+    if (s <= 3 && s >= 1) beep(880, .1);
+    else if (s === 10 && total >= 20000 && phase !== 'prep') speak('10초 남았어요');
+  }
+  render();
+}
+setInterval(tick, 100);
+
+/* 화면 꺼짐 방지 */
+let wake = null;
+async function requestWake(){ try { if ('wakeLock' in navigator && !wake) { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); } } catch(e){ wake = null; } }
+function releaseWake(){ try { if (wake) wake.release(); } catch(e){} wake = null; }
+/* 타이머 화면이 열려 있는 동안 계속 켜 둠: 열 때, 다시 보일 때, 첫 터치 때 요청 */
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') requestWake(); });
+['pointerdown','keydown'].forEach(ev => document.addEventListener(ev, () => { if (!wake) requestWake(); }, { passive:true }));
+requestWake();
+
+/* ───────── 설정 변경 ───────── */
+function applySetting(key, value){
+  cfg[key] = clamp(Math.round(value), LIMITS[key]);
+  saveCfg();
+  if (phase === 'idle'){ total = cfg.work*1000; remain = total; }
+  if (round > cfg.rounds) round = cfg.rounds;
+  render();
+}
+document.querySelectorAll('.step button').forEach(b => b.addEventListener('click', () => {
+  applySetting(b.dataset.k, cfg[b.dataset.k] + Number(b.dataset.d));
+}));
+
+/* ───────── 버튼 ───────── */
+$('mainBtn').addEventListener('click', () => { ensureAudio(); running ? pauseTimer() : startTimer(); });
+$('resetBtn').addEventListener('click', resetTimer);
+$('skipBtn').addEventListener('click', skipTimer);
+$('soundBtn').addEventListener('click', () => {
+  cfg.sound = !cfg.sound; saveCfg();
+  if (!cfg.sound) { try { speechSynthesis.cancel(); } catch(e){} } else ensureAudio();
+  render();
+});
+
+/* ───────── 음성 인식 ───────── */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, micOn = false, fatal = false, handled = new Set();
+const warn = $('warn');
+function showWarn(msg){ warn.textContent = msg; warn.classList.toggle('show', !!msg); }
+function setMicUI(state){
+  $('micBtn').setAttribute('aria-pressed', String(state === 'on'));
+  $('micState').textContent = state === 'on' ? '듣고 있어요 — 명령을 말해 보세요' : '음성 명령 꺼짐 — 마이크를 눌러 켜세요';
+}
+function showHeard(text, ok){
+  const h = $('heard'); h.textContent = text ? `“${text}”${ok ? ' ✓ ' + ok : ''}` : ''; h.classList.toggle('ok', !!ok);
+}
+const CMD_NAME = { start:'시작', pause:'일시정지', skip:'다음', reset:'리셋', ask:'남은 시간', sound:'소리', micoff:'음성 끄기', add:'시간 추가', set:'설정 변경' };
+
+function runCommand(c){
+  ensureAudio();
+  switch (c.type){
+    case 'start': if (!running) startTimer(); break;
+    case 'pause': pauseTimer(); break;
+    case 'skip': skipTimer(); break;
+    case 'reset': resetTimer(); break;
+    case 'add': addTime(c.value); break;
+    case 'sound':
+      cfg.sound = c.on; saveCfg(); if (!c.on) { try { speechSynthesis.cancel(); } catch(e){} } render();
+      if (c.on) speak('소리를 켰어요');
+      break;
+    case 'ask': {
+      if (phase === 'idle' || phase === 'done') { speak('타이머가 멈춰 있어요'); break; }
+      const s = Math.ceil((running ? endAt - Date.now() : remain) / 1000);
+      speak(s >= 60 ? `${Math.floor(s/60)}분 ${s%60}초 남았어요` : `${s}초 남았어요`);
+      break;
+    }
+    case 'micoff': stopMic(); break;
+    case 'set': {
+      applySetting(c.key, c.value);
+      const nm = {work:'운동', rest:'휴식', rounds:'세트'}[c.key];
+      speak(c.key === 'rounds' ? `${cfg.rounds}세트로 설정했어요` : `${nm} ${fmtSet(cfg[c.key])}로 설정했어요`);
+      break;
+    }
+  }
+}
+
+function startMic(){
+  if (!SR){ showWarn('이 브라우저는 음성 인식을 지원하지 않아요. 안드로이드는 Chrome, 아이폰은 Safari에서 열어 주세요. 버튼으로는 계속 쓸 수 있어요.'); return; }
+  ensureAudio();
+  fatal = false; showWarn('');
+  micOn = true; setMicUI('on'); openRec();
+}
+function stopMic(){
+  micOn = false; setMicUI('off');
+  try { rec && rec.stop(); } catch(e){}
+  rec = null; showHeard('');
+}
+function openRec(){
+  if (!micOn) return;
+  try {
+    rec = new SR();
+    rec.lang = 'ko-KR'; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 1;
+    handled = new Set();
+    rec.onresult = e => {
+      for (let i = e.resultIndex; i < e.results.length; i++){
+        if (handled.has(i)) continue;
+        const r = e.results[i], text = r[0].transcript.trim();
+        if (Date.now() < ignoreUntil){ if (r.isFinal) handled.add(i); continue; }   // 내 안내 음성은 무시
+        const c = parseCommand(text, r.isFinal);
+        if (c && c.wait){ showHeard(text); continue; }
+        if (c){
+          handled.add(i); showHeard(text, CMD_NAME[c.type]); runCommand(c);
+        } else {
+          showHeard(text);
+          if (r.isFinal) handled.add(i);
+        }
+      }
+    };
+    rec.onerror = e => {
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed'){
+        fatal = true;
+        showWarn('마이크 사용이 막혀 있어요. 브라우저의 마이크 허용을 확인하세요. 이 화면 안에서 막히면 링크를 Chrome·Safari 같은 브라우저 주소창에서 직접 열어 보세요.');
+        stopMic();
+      } else if (e.error === 'audio-capture'){
+        fatal = true; showWarn('마이크를 찾을 수 없어요.'); stopMic();
+      } else if (e.error === 'network'){
+        showWarn('음성 인식 서버에 연결할 수 없어요. 인터넷 연결을 확인하세요.');
+      }
+    };
+    rec.onend = () => { if (micOn && !fatal) setTimeout(openRec, 250); };
+    rec.start();
+  } catch(err){
+    if (micOn) setTimeout(openRec, 600);
+  }
+}
+$('micBtn').addEventListener('click', () => micOn ? stopMic() : startMic());
+
+/* ───────── 명령 안내 칩 ───────── */
+['시작','정지','계속','다음','처음부터','운동 40초','휴식 20초','8세트','30초 더','남은 시간','소리 꺼'].forEach(s => {
+  const el = document.createElement('span'); el.className = 'chip'; el.textContent = s; $('chips').appendChild(el);
+});
+
+if (!SR) showWarn('이 브라우저는 음성 인식을 지원하지 않아요. 안드로이드는 Chrome, 아이폰은 Safari에서 열면 음성 명령을 쓸 수 있어요. 버튼은 그대로 사용 가능해요.');
+render();
+</script>
+</body>
+</html>
